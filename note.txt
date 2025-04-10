@@ -1,0 +1,2 @@
+meteostat:
+the weather condition code (coco) has large portion of NaN in 2018 and before, but later data has higher quality. Interpretation of coco is in https://dev.meteostat.net/formats.html#weather-condition-codes
