@@ -1,4 +1,5 @@
 #%%
+import sys
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,6 +12,9 @@ import requests
 import json
 import io
 from meteostat import Point, Daily, Hourly
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from api_keys import *
 plt.style.use('seaborn-v0_8-whitegrid')
 plt.rcParams['figure.figsize'] = (12, 8)
 plt.rcParams['font.size'] = 12
@@ -45,7 +49,6 @@ data = data.fetch()
 # print(data['coco'].isna().mean() * 100)
 print(data['coco'])
 # %%
-TOKEN = "pTngtEgitntrkkENFsbABIHKoOdmStzK"
 
 # Base URL for the NOAA CDO Web Services data endpoint
 base_url = "https://www.ncdc.noaa.gov/cdo-web/api/v2/data"

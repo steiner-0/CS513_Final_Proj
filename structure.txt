@@ -1,0 +1,22 @@
+CS513_Final_Proj/
+├── data/
+│   ├── flight_data/          # Raw and processed flight data
+│   ├── weather_data/         # Raw and processed weather data
+│   ├── airport_data/         # Airport metadata
+│   └── merged_data/          # Combined datasets
+├── src/
+│   ├── flight_data.py        # Flight data acquisition and processing
+│   ├── weather_data.py       # Weather data acquisition and processing
+│   ├── airport_data.py       # Airport metadata handling
+│   ├── utils.py              # Data cleaning and merging utilities
+│   ├── data_profiling.py     # Data profiling and statistics
+│   └── main.py              # Main execution script
+├── test/
+│   ├── test_flight.py        # Flight data testing and analysis
+│   └── test_weather.py       # Weather data testing and analysis
+├── profiling_output/         # Data profiling reports and statistics
+├── analysis/                 # Analysis scripts (to be created)
+├── visualization/            # Visualization scripts (to be created)
+├── models/                   # ML models (to be created)
+├── reports/                  # Final reports and documentation
+└── README.md
