@@ -3,6 +3,6 @@ the weather condition code (coco) has large portion of NaN in 2018 and before, b
 
 I will manually download flight on-time performance data
 
-Only take 3 popular airlines(UA, AA, DELTA) and 5 popular origin airports(EWR, JFK, SFO, ORD, DFW).
+Only take 3 popular airlines(UA, AA, DELTA) and 5 popular origin airports(EWR, JFK, SFO, ORD, DFW). But there is not UA flight from JFK
 
 No duplication among origin and dest airports since we only specify origin airports.
