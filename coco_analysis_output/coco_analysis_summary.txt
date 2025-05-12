@@ -1,0 +1,48 @@
+=== WEATHER CONDITION CODE (COCO) ANALYSIS SUMMARY REPORT ===
+
+Generated on: 2025-05-12 01:07:24
+
+== TOP 5 ORIGIN WEATHER CONDITIONS WITH HIGHEST AVERAGE DELAYS ==
+  - Light Snowfall (Code 14): 1.46 minutes average delay, 2.10% of 2144 flights delayed
+  - Heavy Thunderstorm (Code 26): 1.33 minutes average delay, 0.75% of 266 flights delayed
+  - Heavy Rain (Code 9): 0.98 minutes average delay, 3.15% of 445 flights delayed
+  - Overcast (Code 4): 0.81 minutes average delay, 1.09% of 27884 flights delayed
+  - Sleet (Code 12): 0.72 minutes average delay, 4.24% of 165 flights delayed
+
+== TOP 5 DESTINATION WEATHER CONDITIONS WITH HIGHEST AVERAGE DELAYS ==
+  - Overcast (Code 4): 1.17 minutes average delay, 1.10% of 16755 flights delayed
+  - Freezing Rain (Code 10): 1.15 minutes average delay, 2.22% of 135 flights delayed
+  - Rain (Code 8): 0.64 minutes average delay, 0.96% of 3558 flights delayed
+  - Fair (Code 2): 0.64 minutes average delay, 0.83% of 57638 flights delayed
+  - Heavy Rain (Code 9): 0.61 minutes average delay, 1.12% of 623 flights delayed
+
+== ORIGIN VS DESTINATION WEATHER IMPACT ==
+Origin airport weather conditions: 0.53 minutes average delay, 1.02% flights with delays
+Destination airport weather conditions: 0.42 minutes average delay, 0.65% flights with delays
+
+== WEATHER CONDITIONS RANKED BY DELAY IMPACT ==
+  - Overcast: 0.99 minutes average delay, 1.09% of flights delayed
+  - Light Snowfall: 0.98 minutes average delay, 1.33% of flights delayed
+  - Freezing Rain: 0.82 minutes average delay, 1.37% of flights delayed
+  - Heavy Rain: 0.80 minutes average delay, 2.13% of flights delayed
+  - Heavy Thunderstorm: 0.66 minutes average delay, 0.38% of flights delayed
+  - Fair: 0.63 minutes average delay, 0.86% of flights delayed
+  - Fog: 0.57 minutes average delay, 0.78% of flights delayed
+  - Rain: 0.53 minutes average delay, 0.77% of flights delayed
+  - Cloudy: 0.52 minutes average delay, 0.78% of flights delayed
+  - Light Rain: 0.46 minutes average delay, 0.86% of flights delayed
+
+== CONCLUSIONS ==
+1. The weather conditions with the most significant impact on flight delays are:
+   - Overcast
+   - Light Snowfall
+   - Freezing Rain
+
+2. Weather conditions at the origin airport tend to cause longer delays than at the destination.
+
+3. The majority of weather delays occur when these specific conditions are present:
+   - Sleet (2.28% of flights delayed)
+   - Heavy Rain (2.13% of flights delayed)
+   - Freezing Rain (1.37% of flights delayed)
+
+This analysis provides insights into how different weather conditions at origin and destination airports affect flight delays. For more detailed visualizations, refer to the plots in the coco_analysis_output directory.
