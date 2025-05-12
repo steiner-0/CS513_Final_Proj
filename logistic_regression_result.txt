@@ -1,0 +1,47 @@
+              precision    recall  f1-score   support
+
+           0       0.99      1.00      1.00     62739
+           1       0.00      0.00      0.00       584
+
+    accuracy                           0.99     63323
+   macro avg       0.50      0.50      0.50     63323
+weighted avg       0.98      0.99      0.99     63323
+
+
+Confusion Matrix:
+[[62739     0]
+ [  584     0]]
+
+Feature Importance:
+        Feature  Importance
+0   origin_temp    1.092204
+23    coco_18.0    0.814450
+14     coco_8.0    0.794065
+1   origin_dwpt    0.678983
+12     coco_5.0    0.610931
+13     coco_7.0    0.545624
+2   origin_rhum    0.489721
+11     coco_4.0    0.394035
+15     coco_9.0    0.296845
+24    coco_25.0    0.291663
+Feature importance plot saved as 'logistic_regression_feature_importance.png'
+
+Weather Condition Impact on Delay Probability (from most to least):
+COCO 9.0: 0.2968
+COCO 12.0: 0.1985
+COCO 17.0: 0.0388
+COCO 13.0: -0.0026
+COCO 16.0: -0.0166
+COCO 15.0: -0.0348
+COCO 26.0: -0.0476
+COCO 14.0: -0.0758
+COCO 10.0: -0.1533
+COCO 1.0: -0.2624
+COCO 3.0: -0.2721
+COCO 2.0: -0.2834
+COCO 25.0: -0.2917
+COCO 4.0: -0.3940
+COCO 7.0: -0.5456
+COCO 5.0: -0.6109
+COCO 8.0: -0.7941
+COCO 18.0: -0.8145
