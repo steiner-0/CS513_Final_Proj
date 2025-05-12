@@ -1,305 +1,361 @@
-from datetime import datetime
-import json
-import os
-import numpy as np
 import pandas as pd
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import seaborn as sns
 from ydata_profiling import ProfileReport
-from dataprofiler import Profiler
+import os
 
-def profile_data_with_ydata(data, output_prefix="profiling_output/ydata"):
+def load_data(filepath):
     """
-    Profile the data using ydata-profiling (formerly pandas-profiling)
-    
-    Args:
-        data (pandas.DataFrame): The dataset to profile
-        output_prefix (str): Prefix for output files
-        
-    Returns:
-        ProfileReport: The generated profile report
+    Load the flight and weather merged data.
     """
-    print("Profiling data with ydata-profiling...")
-    
-    # Configure the profiler with appropriate settings
-    profile = ProfileReport(
-        data, 
-        title="Flight & Weather Data Profile (2020)",
-        explorative=True,  # Enable more detailed profiling
-        minimal=False,     # Don't use minimal mode
-        correlations={
-            "pearson": {"calculate": True},
-            "spearman": {"calculate": True},
-            "kendall": {"calculate": True},
-            "phi_k": {"calculate": True},
-            "cramers": {"calculate": True},
-        },
-        vars={
-            "num": {
-                "low_categorical_threshold": 0.05,
-                "quantiles": [0.05, 0.25, 0.5, 0.75, 0.95]
-            }
-        }
-    )
-    
-    # Save the profile report to HTML
-    html_file = f"{output_prefix}_profile.html"
-    profile.to_file(html_file)
-    print(f"YData profile report saved to {html_file}")
-    
-    # Save the profile report to JSON
-    json_file = f"{output_prefix}_profile.json"
-    profile.to_json(json_file)
-    print(f"YData profile data saved to {json_file}")
-    
-    return profile
+    print(f"Loading data from {filepath}...")
+    df = pd.read_csv(filepath)
+    print(f"Data loaded successfully. Shape: {df.shape}")
+    return df
 
-def profile_data_with_dataprofiler(data, output_prefix="profiling_output/dataprofiler"):
+def basic_exploration(df):
     """
-    Profile the data using DataProfiler
-    
-    Args:
-        data (pandas.DataFrame): The dataset to profile
-        output_prefix (str): Prefix for output files
-        
-    Returns:
-        dict: The generated profile report
+    Perform basic data exploration.
     """
-    print("Profiling data with DataProfiler...")
+    print("\n=== BASIC DATA EXPLORATION ===")
     
-    # Create a profiler instance
-    profile = Profiler(data)
+    # Display basic info
+    print("\nDataframe Info:")
+    buffer = []
+    df.info(buf=buffer)
+    print("".join(buffer))
     
-    # Generate a report with pretty formatting
-    report = profile.report(report_options={"output_format": "pretty"})
+    # Display basic statistics
+    print("\nBasic Statistics:")
+    print(df.describe())
     
-    # Save the report to a JSON file
-    json_file = f"{output_prefix}_profile.json"
-    with open(json_file, 'w') as f:
-        json.dump(report, f, indent=4)
-    print(f"DataProfiler report saved to {json_file}")
+    # Check for missing values
+    missing_values = df.isnull().sum()
+    missing_percent = (df.isnull().sum() / len(df)) * 100
+    missing_data = pd.DataFrame({'Missing Values': missing_values, 
+                                 'Percentage': missing_percent})
+    missing_data = missing_data[missing_data['Missing Values'] > 0].sort_values('Percentage', ascending=False)
     
-    return report
+    print("\nMissing Values Analysis:")
+    print(missing_data)
+    
+    return missing_data
 
-def profile_datasets(flight_data, weather_data_dict, airport_data, merged_data):
+def convert_datetime_fields(df):
     """
-    Profile all datasets using both profiling libraries
+    Convert date and time fields to proper datetime format.
+    """
+    print("\n=== CONVERTING DATETIME FIELDS ===")
     
-    Args:
-        flight_data (pandas.DataFrame): Flight data
-        weather_data_dict (dict): Dictionary of weather data by airport
-        airport_data (pandas.DataFrame): Airport metadata
-        merged_data (pandas.DataFrame): Merged dataset
+    # Convert FL_DATE to datetime if it's not already
+    if 'FL_DATE' in df.columns and not pd.api.types.is_datetime64_dtype(df['FL_DATE']):
+        df['FL_DATE'] = pd.to_datetime(df['FL_DATE'])
+        print("Converted FL_DATE to datetime")
+    
+    # Convert DEP_DATETIME to datetime if it exists and is not already
+    if 'DEP_DATETIME' in df.columns and not pd.api.types.is_datetime64_dtype(df['DEP_DATETIME']):
+        df['DEP_DATETIME'] = pd.to_datetime(df['DEP_DATETIME'])
+        print("Converted DEP_DATETIME to datetime")
         
-    Returns:
-        dict: Dictionary containing all profile reports
-    """
-    profiles = {}
-    
-    # Profile flight data
-    print("\nProfiling flight data...")
-    flight_ydata_profile = profile_data_with_ydata(flight_data, "profiling_output/flight_ydata")
-    flight_dataprofiler_profile = profile_data_with_dataprofiler(flight_data, "profiling_output/flight_dataprofiler")
-    profiles['flight'] = {
-        'ydata': flight_ydata_profile,
-        'dataprofiler': flight_dataprofiler_profile
-    }
-    
-    # Profile a sample of weather data (first airport in the dictionary)
-    if weather_data_dict:
-        print("\nProfiling weather data (sample)...")
-        first_airport = list(weather_data_dict.keys())[0]
-        weather_sample = weather_data_dict[first_airport]
-        weather_ydata_profile = profile_data_with_ydata(weather_sample, f"profiling_output/weather_{first_airport}_ydata")
-        weather_dataprofiler_profile = profile_data_with_dataprofiler(weather_sample, f"profiling_output/weather_{first_airport}_dataprofiler")
-        profiles['weather'] = {
-            'ydata': weather_ydata_profile,
-            'dataprofiler': weather_dataprofiler_profile
-        }
-    
-    # Profile airport data
-    print("\nProfiling airport metadata...")
-    airport_ydata_profile = profile_data_with_ydata(airport_data, "profiling_output/airport_ydata")
-    airport_dataprofiler_profile = profile_data_with_dataprofiler(airport_data, "profiling_output/airport_dataprofiler")
-    profiles['airport'] = {
-        'ydata': airport_ydata_profile,
-        'dataprofiler': airport_dataprofiler_profile
-    }
-    
-    # Profile merged data
-    print("\nProfiling merged data...")
-    merged_ydata_profile = profile_data_with_ydata(merged_data, "profiling_output/merged_ydata")
-    merged_dataprofiler_profile = profile_data_with_dataprofiler(merged_data, "profiling_output/merged_dataprofiler")
-    profiles['merged'] = {
-        'ydata': merged_ydata_profile,
-        'dataprofiler': merged_dataprofiler_profile
-    }
-    
-    return profiles
+    return df
 
-def generate_summary_statistics(flight_data, weather_data_dict, airport_data, merged_data):
+def analyze_weather_delay(df):
     """
-    Generate summary statistics for all datasets
-    
-    Args:
-        flight_data (pandas.DataFrame): Flight data
-        weather_data_dict (dict): Dictionary of weather data by airport
-        airport_data (pandas.DataFrame): Airport metadata
-        merged_data (pandas.DataFrame): Merged dataset
-        
-    Returns:
-        dict: Dictionary containing summary statistics
+    Analyze the relationship between weather metrics and delay.
     """
-    print("\nGenerating summary statistics...")
+    print("\n=== WEATHER DELAY ANALYSIS ===")
     
-    summary = {}
+    # Check if WEATHER_DELAY exists in the dataframe
+    if 'WEATHER_DELAY' not in df.columns:
+        print("WEATHER_DELAY column not found in the dataset.")
+        return df
     
-    # Flight data statistics
-    flight_stats = {
-        "shape": flight_data.shape,
-        "columns": list(flight_data.columns),
-        "dtypes": {col: str(dtype) for col, dtype in flight_data.dtypes.items()},
-        "missing_values": {col: int(flight_data[col].isna().sum()) for col in flight_data.columns},
-        "missing_percentage": {col: float(flight_data[col].isna().mean() * 100) for col in flight_data.columns},
-        "unique_values": {col: int(flight_data[col].nunique()) for col in flight_data.select_dtypes(include=['object']).columns},
-        "numeric_stats": {col: {
-            "min": float(flight_data[col].min()),
-            "max": float(flight_data[col].max()),
-            "mean": float(flight_data[col].mean()),
-            "median": float(flight_data[col].median()),
-            "std": float(flight_data[col].std())
-        } for col in flight_data.select_dtypes(include=['float64', 'int64']).columns if not flight_data[col].isna().all()},
-        "performance_stats": {
-            "total_flights": len(flight_data),
-            "on_time_flights": int(flight_data[(flight_data['ARR_DEL15'] == 0) & (flight_data['CANCELLED'] == 0) & (flight_data['DIVERTED'] == 0)].shape[0]),
-            "delayed_flights": int(flight_data[flight_data['ARR_DEL15'] == 1].shape[0]),
-            "cancelled_flights": int(flight_data[flight_data['CANCELLED'] == 1].shape[0]),
-            "diverted_flights": int(flight_data[flight_data['DIVERTED'] == 1].shape[0]),
-            "pct_on_time": float(flight_data[(flight_data['ARR_DEL15'] == 0) & (flight_data['CANCELLED'] == 0) & (flight_data['DIVERTED'] == 0)].shape[0] / len(flight_data) * 100),
-            "pct_delayed": float(flight_data[flight_data['ARR_DEL15'] == 1].shape[0] / len(flight_data) * 100),
-            "pct_cancelled": float(flight_data[flight_data['CANCELLED'] == 1].shape[0] / len(flight_data) * 100),
-            "pct_diverted": float(flight_data[flight_data['DIVERTED'] == 1].shape[0] / len(flight_data) * 100),
-            "avg_dep_delay": float(flight_data['DEP_DELAY'].mean()),
-            "avg_arr_delay": float(flight_data['ARR_DELAY'].mean()),
-        }
-    }
+    # Calculate average weather delay
+    avg_weather_delay = df['WEATHER_DELAY'].mean()
+    print(f"Average Weather Delay: {avg_weather_delay:.2f} minutes")
     
-    # Add delay reason statistics
-    delay_cols = ['CARRIER_DELAY', 'WEATHER_DELAY', 'NAS_DELAY', 'SECURITY_DELAY', 'LATE_AIRCRAFT_DELAY']
-    delayed_flights = flight_data[flight_data['ARR_DEL15'] == 1]
+    # Count flights with weather delays
+    flights_with_weather_delay = df[df['WEATHER_DELAY'] > 0].shape[0]
+    total_flights = df.shape[0]
+    percent_with_delay = (flights_with_weather_delay / total_flights) * 100
+    print(f"Flights with Weather Delay: {flights_with_weather_delay} ({percent_with_delay:.2f}%)")
     
-    if not delayed_flights.empty:
-        total_delay_minutes = delayed_flights[delay_cols].sum().sum()
-        flight_stats["delay_reasons"] = {
-            "total_delay_minutes": float(total_delay_minutes)
-        }
-        
-        for col in delay_cols:
-            delay_minutes = delayed_flights[col].sum()
-            flight_stats["delay_reasons"][col.lower()] = {
-                "minutes": float(delay_minutes),
-                "percentage": float(delay_minutes / total_delay_minutes * 100) if total_delay_minutes > 0 else 0
-            }
+    # Create weather delay category
+    df['delay_category'] = pd.cut(df['WEATHER_DELAY'], 
+                                 bins=[-1, 0, 15, 30, 60, float('inf')],
+                                 labels=['No Delay', 'Short (0-15min)', 'Medium (15-30min)', 
+                                         'Long (30-60min)', 'Very Long (>60min)'])
     
-    # Weather data statistics (sample from first airport)
-    if weather_data_dict:
-        first_airport = list(weather_data_dict.keys())[0]
-        weather_sample = weather_data_dict[first_airport]
-        
-        weather_stats = {
-            "shape": weather_sample.shape,
-            "columns": list(weather_sample.columns),
-            "dtypes": {col: str(dtype) for col, dtype in weather_sample.dtypes.items()},
-            "missing_values": {col: int(weather_sample[col].isna().sum()) for col in weather_sample.columns},
-            "missing_percentage": {col: float(weather_sample[col].isna().mean() * 100) for col in weather_sample.columns},
-            "numeric_stats": {col: {
-                "min": float(weather_sample[col].min()),
-                "max": float(weather_sample[col].max()),
-                "mean": float(weather_sample[col].mean()),
-                "median": float(weather_sample[col].median()),
-                "std": float(weather_sample[col].std())
-            } for col in weather_sample.select_dtypes(include=['float64', 'int64']).columns if not weather_sample[col].isna().all()}
-        }
+    delay_distribution = df['delay_category'].value_counts().sort_index()
+    print("\nDelay Category Distribution:")
+    print(delay_distribution)
+    
+    return df
+
+def create_visualizations(df, missing_data, output_dir):
+    """
+    Create visualizations for the dataset.
+    """
+    print("\n=== CREATING VISUALIZATIONS ===")
+    
+    # Create output directory if it doesn't exist
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    # Figure 1: Missing values visualization
+    plt.figure(figsize=(12, 6))
+    if not missing_data.empty:
+        missing_data = missing_data.sort_values('Percentage')
+        plt.barh(missing_data.index, missing_data['Percentage'])
+        plt.xlabel('Missing Percentage (%)')
+        plt.ylabel('Columns')
+        plt.title('Missing Values Percentage by Column')
+        plt.tight_layout()
+        plt.savefig(f"{output_dir}/missing_values.png")
+        print(f"Saved missing values visualization to {output_dir}/missing_values.png")
     else:
-        weather_stats = {"error": "No weather data available"}
+        print("No missing values to visualize.")
     
-    # Airport data statistics
-    airport_stats = {
-        "shape": airport_data.shape,
-        "columns": list(airport_data.columns),
-        "dtypes": {col: str(dtype) for col, dtype in airport_data.dtypes.items()},
-        "missing_values": {col: int(airport_data[col].isna().sum()) for col in airport_data.columns},
-        "missing_percentage": {col: float(airport_data[col].isna().mean() * 100) for col in airport_data.columns},
-        "unique_values": {col: int(airport_data[col].nunique()) for col in airport_data.select_dtypes(include=['object']).columns},
-        "numeric_stats": {col: {
-            "min": float(airport_data[col].min()),
-            "max": float(airport_data[col].max()),
-            "mean": float(airport_data[col].mean()),
-            "median": float(airport_data[col].median()),
-            "std": float(airport_data[col].std())
-        } for col in airport_data.select_dtypes(include=['float64', 'int64']).columns if not airport_data[col].isna().all()},
-        "region_counts": airport_data['region'].value_counts().to_dict() if 'region' in airport_data.columns else {}
-    }
+    # Figure 2: Weather delay distribution
+    if 'WEATHER_DELAY' in df.columns:
+        plt.figure(figsize=(10, 6))
+        sns.histplot(df['WEATHER_DELAY'].dropna(), bins=50, kde=True)
+        plt.xlabel('Weather Delay (minutes)')
+        plt.ylabel('Frequency')
+        plt.title('Distribution of Weather Delays')
+        plt.xlim(0, df['WEATHER_DELAY'].quantile(0.95))  # Limit x-axis to 95th percentile
+        plt.tight_layout()
+        plt.savefig(f"{output_dir}/weather_delay_distribution.png")
+        print(f"Saved weather delay distribution to {output_dir}/weather_delay_distribution.png")
     
-    # Merged data statistics
-    merged_stats = {
-        "shape": merged_data.shape,
-        "columns": list(merged_data.columns),
-        "dtypes": {col: str(dtype) for col, dtype in merged_data.dtypes.items()},
-        "missing_values": {col: int(merged_data[col].isna().sum()) for col in merged_data.columns},
-        "missing_percentage": {col: float(merged_data[col].isna().mean() * 100) for col in merged_data.columns}
-    }
+    # Figure 3: Correlation between origin weather conditions and delay
+    weather_cols = [col for col in df.columns if col.startswith('origin_') and df[col].dtype != 'object']
+    weather_cols.append('WEATHER_DELAY')
     
-    # Calculate correlations between weather and delays in merged data
-    weather_cols = ['tavg', 'tmin', 'tmax', 'prcp', 'snow', 'wspd', 'pres', 'coco']
-    delay_cols = ['DEP_DELAY', 'ARR_DELAY', 'DEP_DELAY_NEW', 'ARR_DELAY_NEW']
+    if len(weather_cols) > 1 and 'WEATHER_DELAY' in df.columns:
+        plt.figure(figsize=(12, 10))
+        correlation = df[weather_cols].corr()
+        sns.heatmap(correlation, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
+        plt.title('Correlation between Origin Weather Conditions and Delay')
+        plt.tight_layout()
+        plt.savefig(f"{output_dir}/weather_delay_correlation.png")
+        print(f"Saved weather-delay correlation heatmap to {output_dir}/weather_delay_correlation.png")
     
-    weather_delay_corr = {}
+    # Figure 4: Boxplot of weather delay by origin
+    if 'ORIGIN' in df.columns and 'WEATHER_DELAY' in df.columns:
+        top_origins = df['ORIGIN'].value_counts().head(10).index
+        origin_data = df[df['ORIGIN'].isin(top_origins)]
+        
+        plt.figure(figsize=(14, 8))
+        sns.boxplot(x='ORIGIN', y='WEATHER_DELAY', data=origin_data)
+        plt.xlabel('Origin Airport')
+        plt.ylabel('Weather Delay (minutes)')
+        plt.title('Weather Delay Distribution by Top 10 Origin Airports')
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.savefig(f"{output_dir}/delay_by_origin.png")
+        print(f"Saved delay by origin boxplot to {output_dir}/delay_by_origin.png")
     
-    for w_col in weather_cols:
-        if w_col in merged_data.columns:
-            for d_col in delay_cols:
-                if d_col in merged_data.columns:
-                    # Calculate correlation, ignoring NaN values
-                    corr = merged_data[[w_col, d_col]].corr().iloc[0, 1]
-                    weather_delay_corr[f"{w_col}_{d_col}"] = float(corr)
+    plt.close('all')
+
+def generate_profile_report(df, output_dir):
+    """
+    Generate a comprehensive profile report using ydata-profiling.
+    """
+    print("\n=== GENERATING PROFILE REPORT ===")
     
-    merged_stats["weather_delay_correlations"] = weather_delay_corr
+    try:
+        # Create output directory if it doesn't exist
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        
+        # Generate the report
+        profile = ProfileReport(df, title="Flight Weather Merged Data Profiling Report", 
+                                explorative=True)
+        
+        # Save the report
+        profile.to_file(f"{output_dir}/profile_report.html")
+        print(f"Saved comprehensive profile report to {output_dir}/profile_report.html")
+        
+        return profile
+    except Exception as e:
+        print(f"Error generating profile report: {e}")
+        print("Continuing with other analyses...")
+        return None
+
+def analyze_weather_impact(df):
+    """
+    Analyze the impact of different weather conditions on delays.
+    """
+    print("\n=== ANALYZING WEATHER IMPACT ON DELAYS ===")
     
-    # Combine all statistics
-    summary = {
-        "flight_data": flight_stats,
-        "weather_data": weather_stats,
-        "airport_data": airport_stats,
-        "merged_data": merged_stats,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    }
+    if 'WEATHER_DELAY' not in df.columns:
+        print("WEATHER_DELAY column not found in the dataset.")
+        return None
     
-    # Save summary to JSON
-    summary_file = "profiling_output/summary_statistics.json"
-    with open(summary_file, 'w') as f:
-        json.dump(summary, f, indent=4)
-    print(f"Summary statistics saved to {summary_file}")
+    # Define weather condition columns to analyze
+    weather_metrics = [
+        ('Temperature', 'origin_temp'),
+        ('Dew Point', 'origin_dwpt'),
+        ('Relative Humidity', 'origin_rhum'),
+        ('Precipitation', 'origin_prcp'),
+        ('Wind Speed', 'origin_wspd'),
+        ('Pressure', 'origin_pres'),
+        ('Weather Condition Code', 'origin_coco')
+    ]
     
-    # Print key statistics to console
-    print("\nKey Flight Performance Statistics:")
-    print(f"Total Flights: {flight_stats['performance_stats']['total_flights']}")
-    print(f"On-time Flights: {flight_stats['performance_stats']['on_time_flights']} ({flight_stats['performance_stats']['pct_on_time']:.1f}%)")
-    print(f"Delayed Flights: {flight_stats['performance_stats']['delayed_flights']} ({flight_stats['performance_stats']['pct_delayed']:.1f}%)")
-    print(f"Cancelled Flights: {flight_stats['performance_stats']['cancelled_flights']} ({flight_stats['performance_stats']['pct_cancelled']:.1f}%)")
-    print(f"Diverted Flights: {flight_stats['performance_stats']['diverted_flights']} ({flight_stats['performance_stats']['pct_diverted']:.1f}%)")
+    # Create a table of correlations
+    correlations = []
     
-    if "delay_reasons" in flight_stats:
-        print("\nDelay Reason Breakdown:")
-        for reason, stats in flight_stats["delay_reasons"].items():
-            if reason != "total_delay_minutes":
-                reason_name = reason.replace("_", " ").title()
-                print(f"{reason_name}: {stats['percentage']:.1f}%")
+    for name, col in weather_metrics:
+        if col in df.columns and df[col].dtype != 'object':
+            try:
+                corr = df[['WEATHER_DELAY', col]].corr().iloc[0, 1]
+                correlations.append((name, col, corr))
+            except:
+                print(f"Could not calculate correlation for {name}")
     
-    if weather_delay_corr:
-        print("\nTop Weather-Delay Correlations:")
-        # Sort correlations by absolute value and print top 5
-        sorted_corrs = sorted(weather_delay_corr.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
-        for pair, corr in sorted_corrs:
-            w_col, d_col = pair.split('_', 1)
-            print(f"{w_col} vs {d_col}: {corr:.3f}")
+    if correlations:
+        correlations_df = pd.DataFrame(correlations, columns=['Weather Metric', 'Column', 'Correlation with Weather Delay'])
+        correlations_df = correlations_df.sort_values('Correlation with Weather Delay', ascending=False)
+        
+        print("\nCorrelation between Weather Metrics and Delay:")
+        print(correlations_df)
+        
+        # Identify strongest relationships
+        strongest_positive = correlations_df.loc[correlations_df['Correlation with Weather Delay'] == 
+                                               correlations_df['Correlation with Weather Delay'].max()]
+        strongest_negative = correlations_df.loc[correlations_df['Correlation with Weather Delay'] == 
+                                               correlations_df['Correlation with Weather Delay'].min()]
+        
+        print(f"\nStrongest positive correlation: {strongest_positive['Weather Metric'].values[0]} "
+              f"({strongest_positive['Correlation with Weather Delay'].values[0]:.3f})")
+        print(f"Strongest negative correlation: {strongest_negative['Weather Metric'].values[0]} "
+              f"({strongest_negative['Correlation with Weather Delay'].values[0]:.3f})")
+        
+        return correlations_df
+    else:
+        print("No numeric weather metrics found for correlation analysis.")
+        return None
+
+def generate_summary_report(df, output_dir, weather_impact=None):
+    """
+    Generate a summary report with key findings.
+    """
+    print("\n=== GENERATING SUMMARY REPORT ===")
     
-    return summary
+    # Create output directory if it doesn't exist
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    # Open file for writing
+    with open(f"{output_dir}/summary_report.txt", "w") as file:
+        # Write header
+        file.write("=== FLIGHT-WEATHER DATA PROFILING SUMMARY REPORT ===\n\n")
+        file.write(f"Generated on: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        file.write(f"Dataset: Flight-Weather Merged Data\n")
+        file.write(f"Records: {df.shape[0]}\n")
+        file.write(f"Variables: {df.shape[1]}\n\n")
+        
+        # Dataset summary
+        file.write("== DATASET SUMMARY ==\n")
+        if 'FL_DATE' in df.columns:
+            try:
+                if not pd.api.types.is_datetime64_dtype(df['FL_DATE']):
+                    df['FL_DATE'] = pd.to_datetime(df['FL_DATE'])
+                file.write(f"Date range: {df['FL_DATE'].min()} to {df['FL_DATE'].max()}\n")
+            except:
+                pass
+        
+        if 'ORIGIN' in df.columns:
+            top_origins = df['ORIGIN'].value_counts().head(5)
+            file.write("\nTop 5 Origin Airports:\n")
+            for airport, count in top_origins.items():
+                file.write(f"  - {airport}: {count} flights ({count/df.shape[0]*100:.1f}%)\n")
+        
+        # Missing data summary
+        missing_counts = df.isnull().sum()
+        missing_cols = missing_counts[missing_counts > 0]
+        
+        file.write("\n== MISSING DATA SUMMARY ==\n")
+        if len(missing_cols) > 0:
+            file.write(f"Columns with missing values: {len(missing_cols)}\n")
+            for col, count in missing_cols.items():
+                file.write(f"  - {col}: {count} missing values ({count/df.shape[0]*100:.1f}%)\n")
+        else:
+            file.write("No missing values found in the dataset.\n")
+        
+        # Weather delay summary
+        if 'WEATHER_DELAY' in df.columns:
+            file.write("\n== WEATHER DELAY SUMMARY ==\n")
+            avg_delay = df['WEATHER_DELAY'].mean()
+            max_delay = df['WEATHER_DELAY'].max()
+            delays_count = df[df['WEATHER_DELAY'] > 0].shape[0]
+            
+            file.write(f"Average weather delay: {avg_delay:.2f} minutes\n")
+            file.write(f"Maximum weather delay: {max_delay:.2f} minutes\n")
+            file.write(f"Flights with weather delays: {delays_count} ({delays_count/df.shape[0]*100:.1f}%)\n")
+        
+        # Weather correlations summary
+        if weather_impact is not None and not weather_impact.empty:
+            file.write("\n== WEATHER-DELAY CORRELATION SUMMARY ==\n")
+            for _, row in weather_impact.head(5).iterrows():
+                metric = row['Weather Metric']
+                corr = row['Correlation with Weather Delay']
+                file.write(f"  - {metric}: {corr:.3f}\n")
+        
+        # Conclusion
+        file.write("\n== CONCLUSION ==\n")
+        file.write("This report provides a summary of the flight-weather merged dataset. ")
+        file.write("For more detailed analysis, refer to the visualizations in the profiling_output directory.\n")
+    
+    print(f"Saved summary report to {output_dir}/summary_report.txt")
+
+def main():
+    # Set input and output paths
+    input_filepath = "output/flight_weather_merged.csv"
+    output_dir = "profiling_output"
+    
+    # Create output directory if it doesn't exist
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    try:
+        # Load the data
+        df = load_data(input_filepath)
+        
+        # Basic exploration
+        missing_data = basic_exploration(df)
+        
+        # Convert datetime fields
+        df = convert_datetime_fields(df)
+        
+        # Analyze weather delay
+        df = analyze_weather_delay(df)
+        
+        # Analyze weather impact
+        weather_impact = analyze_weather_impact(df)
+        
+        # Generate visualizations
+        create_visualizations(df, missing_data, output_dir)
+        
+        # Generate profile report - this can be resource-intensive
+        try:
+            profile = generate_profile_report(df, output_dir)
+        except Exception as e:
+            print(f"Error generating profile report: {e}")
+            print("Continuing with other analyses...")
+        
+        # Generate summary report
+        generate_summary_report(df, output_dir, weather_impact)
+        
+        print(f"\nData profiling complete. All outputs saved to {output_dir}/")
+    
+    except Exception as e:
+        print(f"Error during data profiling: {e}")
+
+if __name__ == "__main__":
+    main()
