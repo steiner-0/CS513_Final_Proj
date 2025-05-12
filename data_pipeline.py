@@ -140,7 +140,19 @@ def get_hourly_weather(airport_code, year):
     
     if os.path.exists(cache_file):
         print(f"Loading cached weather data for {airport_code}")
-        return pd.read_csv(cache_file, parse_dates=['time'])
+        weather_df = pd.read_csv(cache_file, parse_dates=['time'])
+        
+        # Replace wpgt with wspd when wpgt is 0 or NaN
+        # First handle NaN values in wpgt
+        if 'wpgt' in weather_df.columns and 'wspd' in weather_df.columns:
+            # Replace NaN values in wpgt with corresponding wspd values
+            weather_df['wpgt'] = weather_df['wpgt'].fillna(weather_df['wspd'])
+            # Replace 0 values in wpgt with corresponding wspd values
+            mask = (weather_df['wpgt'] == 0) & (weather_df['wspd'] > 0)
+            weather_df.loc[mask, 'wpgt'] = weather_df.loc[mask, 'wspd']
+            print(f"Processed wpgt values for {airport_code} (from cache)")
+        
+        return weather_df
     
     # Get airport coordinates
     lat, lon = get_airport_coordinates(airport_code)
@@ -166,6 +178,15 @@ def get_hourly_weather(airport_code, year):
         
         # Reset index to make time a column
         weather_df = weather_df.reset_index()
+        
+        # Replace wpgt with wspd when wpgt is 0 or NaN
+        if 'wpgt' in weather_df.columns and 'wspd' in weather_df.columns:
+            # Replace NaN values in wpgt with corresponding wspd values
+            weather_df['wpgt'] = weather_df['wpgt'].fillna(weather_df['wspd'])
+            # Replace 0 values in wpgt with corresponding wspd values 
+            mask = (weather_df['wpgt'] == 0) & (weather_df['wspd'] > 0)
+            weather_df.loc[mask, 'wpgt'] = weather_df.loc[mask, 'wspd']
+            print(f"Processed wpgt values for {airport_code} (from API)")
         
         # Add airport code
         weather_df['airport'] = airport_code
@@ -199,6 +220,12 @@ def merge_flight_and_weather(flight_data):
     for airport in tqdm(airports, desc="Fetching weather data for airports"):
         weather_df = get_hourly_weather(airport, year)
         if not weather_df.empty:
+            # Double-check that wpgt = wspd when wpgt is 0
+            if 'wpgt' in weather_df.columns and 'wspd' in weather_df.columns:
+                # Apply the replacement again to ensure it's done
+                mask = (weather_df['wpgt'] == 0) & (weather_df['wspd'] > 0)
+                weather_df.loc[mask, 'wpgt'] = weather_df.loc[mask, 'wspd']
+                
             weather_data[airport] = weather_df
             tqdm.write(f"Successfully processed weather data for {airport}")
     
@@ -273,6 +300,23 @@ def merge_flight_and_weather(flight_data):
     for col in temp_cols:
         if col in merged_df.columns:
             merged_df.drop(col, axis=1, inplace=True)
+    
+    # Post-processing: final check to ensure wpgt values are replaced when they are 0
+    print("Performing final check on wpgt values...")
+    
+    # Origin airport
+    if 'origin_wpgt' in merged_df.columns and 'origin_wspd' in merged_df.columns:
+        mask = (merged_df['origin_wpgt'] == 0) & (merged_df['origin_wspd'] > 0)
+        count_replaced = mask.sum()
+        merged_df.loc[mask, 'origin_wpgt'] = merged_df.loc[mask, 'origin_wspd']
+        print(f"Replaced {count_replaced} zero values in origin_wpgt with origin_wspd")
+    
+    # Destination airport
+    if 'dest_wpgt' in merged_df.columns and 'dest_wspd' in merged_df.columns:
+        mask = (merged_df['dest_wpgt'] == 0) & (merged_df['dest_wspd'] > 0)
+        count_replaced = mask.sum()
+        merged_df.loc[mask, 'dest_wpgt'] = merged_df.loc[mask, 'dest_wspd']
+        print(f"Replaced {count_replaced} zero values in dest_wpgt with dest_wspd")
     
     # Save merged data
     output_file = os.path.join(OUTPUT_DIR, 'flight_weather_merged.csv')
