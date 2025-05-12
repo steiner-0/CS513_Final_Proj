@@ -152,6 +152,20 @@ def get_hourly_weather(airport_code, year):
             weather_df.loc[mask, 'wpgt'] = weather_df.loc[mask, 'wspd']
             print(f"Processed wpgt values for {airport_code} (from cache)")
         
+        # CHANGE 1: Replace NA/empty coco values with 1 (Clear)
+        if 'coco' in weather_df.columns:
+            weather_df['coco'] = weather_df['coco'].fillna(1)
+            print(f"Replaced NA coco values with 1 (Clear) for {airport_code} (from cache)")
+            
+        # CHANGE 2: Replace NA/empty prcp and snow values with 0
+        if 'prcp' in weather_df.columns:
+            weather_df['prcp'] = weather_df['prcp'].fillna(0)
+            print(f"Replaced NA prcp values with 0 for {airport_code} (from cache)")
+            
+        if 'snow' in weather_df.columns:
+            weather_df['snow'] = weather_df['snow'].fillna(0)
+            print(f"Replaced NA snow values with 0 for {airport_code} (from cache)")
+        
         return weather_df
     
     # Get airport coordinates
@@ -187,6 +201,20 @@ def get_hourly_weather(airport_code, year):
             mask = (weather_df['wpgt'] == 0) & (weather_df['wspd'] > 0)
             weather_df.loc[mask, 'wpgt'] = weather_df.loc[mask, 'wspd']
             print(f"Processed wpgt values for {airport_code} (from API)")
+        
+        # CHANGE 1: Replace NA/empty coco values with 1 (Clear)
+        if 'coco' in weather_df.columns:
+            weather_df['coco'] = weather_df['coco'].fillna(1)
+            print(f"Replaced NA coco values with 1 (Clear) for {airport_code} (from API)")
+            
+        # CHANGE 2: Replace NA/empty prcp and snow values with 0
+        if 'prcp' in weather_df.columns:
+            weather_df['prcp'] = weather_df['prcp'].fillna(0)
+            print(f"Replaced NA prcp values with 0 for {airport_code} (from API)")
+            
+        if 'snow' in weather_df.columns:
+            weather_df['snow'] = weather_df['snow'].fillna(0)
+            print(f"Replaced NA snow values with 0 for {airport_code} (from API)")
         
         # Add airport code
         weather_df['airport'] = airport_code
@@ -301,7 +329,30 @@ def merge_flight_and_weather(flight_data):
         if col in merged_df.columns:
             merged_df.drop(col, axis=1, inplace=True)
     
-    # Post-processing: final check to ensure wpgt values are replaced when they are 0
+    # Post-processing: Final replacement of any remaining NA values
+    print("Performing final data cleaning...")
+    
+    # CHANGE 1: Replace any remaining NA coco values with 1 (Clear)
+    if 'origin_coco' in merged_df.columns:
+        na_count = merged_df['origin_coco'].isna().sum()
+        merged_df['origin_coco'] = merged_df['origin_coco'].fillna(1)
+        print(f"Replaced {na_count} NA values in origin_coco with 1 (Clear)")
+    
+    if 'dest_coco' in merged_df.columns:
+        na_count = merged_df['dest_coco'].isna().sum()
+        merged_df['dest_coco'] = merged_df['dest_coco'].fillna(1)
+        print(f"Replaced {na_count} NA values in dest_coco with 1 (Clear)")
+    
+    # CHANGE 2: Replace any remaining NA precipitation and snow values with 0
+    for col_prefix in ['origin_', 'dest_']:
+        for col_suffix in ['prcp', 'snow']:
+            col_name = f"{col_prefix}{col_suffix}"
+            if col_name in merged_df.columns:
+                na_count = merged_df[col_name].isna().sum()
+                merged_df[col_name] = merged_df[col_name].fillna(0)
+                print(f"Replaced {na_count} NA values in {col_name} with 0")
+    
+    # Final check to ensure wpgt values are replaced when they are 0
     print("Performing final check on wpgt values...")
     
     # Origin airport
