@@ -87,6 +87,7 @@ def load_flight_data():
         combined_df['FL_DATE'] = pd.to_datetime(combined_df['FL_DATE'])
         
         # Create departure datetime for merging with hourly weather
+        # CHANGE: Using CRS_DEP_TIME (scheduled) instead of DEP_TIME (actual)
         combined_df['DEP_HOUR'] = combined_df['CRS_DEP_TIME'].apply(
             lambda x: int(str(int(x)).zfill(4)[:2]) if pd.notna(x) else np.nan
         )
@@ -94,15 +95,36 @@ def load_flight_data():
             lambda x: int(str(int(x)).zfill(4)[2:]) if pd.notna(x) else np.nan
         )
         
-        # Create full departure datetime
-        combined_df['DEP_DATETIME'] = combined_df.apply(
+        # Create full scheduled departure datetime
+        combined_df['CRS_DEP_DATETIME'] = combined_df.apply(
             lambda row: row['FL_DATE'] + timedelta(hours=int(row['DEP_HOUR']), minutes=int(row['DEP_MINUTE']))
             if pd.notna(row['DEP_HOUR']) and pd.notna(row['DEP_MINUTE']) else pd.NaT,
             axis=1
         )
         
+        # Create scheduled arrival datetime
+        combined_df['ARR_HOUR'] = combined_df['CRS_ARR_TIME'].apply(
+            lambda x: int(str(int(x)).zfill(4)[:2]) if pd.notna(x) else np.nan
+        )
+        combined_df['ARR_MINUTE'] = combined_df['CRS_ARR_TIME'].apply(
+            lambda x: int(str(int(x)).zfill(4)[2:]) if pd.notna(x) else np.nan
+        )
+        
+        # Create full scheduled arrival datetime
+        combined_df['CRS_ARR_DATETIME'] = combined_df.apply(
+            lambda row: row['FL_DATE'] + timedelta(hours=int(row['ARR_HOUR']), minutes=int(row['ARR_MINUTE']))
+            if pd.notna(row['ARR_HOUR']) and pd.notna(row['ARR_MINUTE']) else pd.NaT,
+            axis=1
+        )
+        
+        # Adjust for overnight flights by adding a day if arrival time is earlier than departure
+        combined_df.loc[combined_df['CRS_ARR_DATETIME'] < combined_df['CRS_DEP_DATETIME'], 'CRS_ARR_DATETIME'] += timedelta(days=1)
+        
         # Fill NaN values in WEATHER_DELAY with 0 (assuming no delay)
         combined_df['WEATHER_DELAY'] = combined_df['WEATHER_DELAY'].fillna(0)
+        
+        # Drop intermediate columns
+        combined_df.drop(['DEP_HOUR', 'DEP_MINUTE', 'ARR_HOUR', 'ARR_MINUTE'], axis=1, inplace=True)
         
         print(f"Successfully loaded {len(combined_df)} flight records")
         return combined_df
@@ -194,15 +216,15 @@ def merge_flight_and_weather(flight_data):
     # Process each flight
     print("Merging weather data with flights...")
     
-    # Group by origin and departure datetime to process more efficiently
+    # CHANGE: Process origin airports
     origins = merged_df['ORIGIN'].unique()
-    for origin in tqdm(origins, desc="Merging data by origin airport"):
+    for origin in tqdm(origins, desc="Merging origin airport weather data"):
         if origin in weather_data:
             origin_group = merged_df[merged_df['ORIGIN'] == origin]
             origin_weather = weather_data[origin]
             
             # Convert to datetime and round to hour for merging
-            origin_group['dep_hour'] = origin_group['DEP_DATETIME'].dt.floor('H')
+            origin_group['dep_hour'] = origin_group['CRS_DEP_DATETIME'].dt.floor('H')
             
             # Merge with weather data
             merged_origin = pd.merge(
@@ -218,11 +240,39 @@ def merge_flight_and_weather(flight_data):
                 if col in origin_weather.columns:
                     merged_df.loc[merged_origin.index, f'origin_{col}'] = merged_origin[col].values
             
-            tqdm.write(f"Merged {len(origin_group)} flights for {origin}")
+            tqdm.write(f"Merged {len(origin_group)} origin flights for {origin}")
+    
+    # CHANGE: Process destination airports
+    destinations = merged_df['DEST'].unique()
+    for dest in tqdm(destinations, desc="Merging destination airport weather data"):
+        if dest in weather_data:
+            dest_group = merged_df[merged_df['DEST'] == dest]
+            dest_weather = weather_data[dest]
+            
+            # Convert to datetime and round to hour for merging
+            dest_group['arr_hour'] = dest_group['CRS_ARR_DATETIME'].dt.floor('H')
+            
+            # Merge with weather data
+            merged_dest = pd.merge(
+                dest_group,
+                dest_weather,
+                left_on='arr_hour',
+                right_on='time',
+                how='left'
+            )
+            
+            # Update original dataframe with weather data
+            for col in weather_cols:
+                if col in dest_weather.columns:
+                    merged_df.loc[merged_dest.index, f'dest_{col}'] = merged_dest[col].values
+            
+            tqdm.write(f"Merged {len(dest_group)} destination flights for {dest}")
     
     # Clean up temporary columns
-    if 'dep_hour' in merged_df.columns:
-        merged_df.drop('dep_hour', axis=1, inplace=True)
+    temp_cols = ['dep_hour', 'arr_hour']
+    for col in temp_cols:
+        if col in merged_df.columns:
+            merged_df.drop(col, axis=1, inplace=True)
     
     # Save merged data
     output_file = os.path.join(OUTPUT_DIR, 'flight_weather_merged.csv')
