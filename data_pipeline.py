@@ -1,522 +1,269 @@
 import os
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from datetime import datetime
-from meteostat import Point, Daily, Hourly, Stations
-import re
-import csv
+from datetime import datetime, timedelta
+from meteostat import Point, Hourly, Stations
+from tqdm import tqdm
 
 # File paths
 FLIGHT_DATA_DIR = "flight_data"
 AIRPORT_DATA_FILE = "airport_data/airports.dat"
 WEATHER_DATA_DIR = "weather_data"
-OUTPUT_DIR = "analysis_output"
+OUTPUT_DIR = "output"
 
-# Create output directory if it doesn't exist
+# Create output directories if they don't exist
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-
+os.makedirs(WEATHER_DATA_DIR, exist_ok=True)
 
 def get_airport_coordinates(iata_code, filepath=AIRPORT_DATA_FILE):
-    """
-    Looks up the latitude and longitude of an airport given its IATA code.
-    
-    Parameters:
-        iata_code (str): The 3-letter IATA airport code.
-        filepath (str): Path to the OpenFlights airports.dat file.
-        
-    Returns:
-        tuple: (latitude, longitude) if found, otherwise None.
-    """
-    with open(filepath, encoding='utf-8') as f:
-        reader = csv.reader(f)
-        for row in reader:
-            # Columns: ID, Name, City, Country, IATA, ICAO, Latitude, Longitude, ...
-            if len(row) > 7 and row[4].upper() == iata_code.upper():
-                return float(row[6]), float(row[7])
-            
-    print(f"Airport with IATA code {iata_code} not found in {filepath}.")
-    return None, None
+    """Get latitude and longitude for an airport from its IATA code"""
+    try:
+        # Open the airports.dat file and search for the airport
+        with open(filepath, 'r', encoding='utf-8') as f:
+            for line in f:
+                parts = line.strip().split(',')
+                # Check if this line has the IATA code we're looking for
+                if len(parts) > 4 and parts[4].strip('"') == iata_code:
+                    # Return latitude and longitude
+                    return float(parts[6]), float(parts[7])
+        print(f"Airport {iata_code} not found in database")
+        return None, None
+    except Exception as e:
+        print(f"Error finding coordinates for {iata_code}: {e}")
+        return None, None
 
-
-def airport_to_station(iata_code, filepath=AIRPORT_DATA_FILE):
-    """
-    Converts an airport IATA code to a Meteostat station ID.
-    
-    Parameters:
-        iata_code (str): The 3-letter IATA airport code.
-        filepath (str): Path to the OpenFlights airports.dat file.
-        
-    Returns:
-        str: Meteostat station ID if found, otherwise None.
-    """
-    coords = get_airport_coordinates(iata_code, filepath)
-    
-    if coords[0] is None or coords[1] is None:
+def get_nearest_weather_station(lat, lon):
+    """Find the nearest weather station to the given coordinates"""
+    if lat is None or lon is None:
         return None
-        
-    latitude, longitude = coords
-
-    # Use Meteostat to find nearby stations
-    stations = Stations()
-    stations = stations.nearby(latitude, longitude)
-    
-    # Fetch the nearest station
-    nearest_station = stations.fetch(1)
-    
-    return nearest_station.index[0] if not nearest_station.empty else None
-
-
-def load_flight_data(directory=FLIGHT_DATA_DIR):
-    """
-    Load all flight data files into a consolidated DataFrame.
-    
-    Parameters:
-        directory (str): Directory containing flight data CSV files
-        
-    Returns:
-        pandas.DataFrame: Consolidated flight data
-    """
-    all_flights = []
-    
-    for filename in os.listdir(directory):
-        if filename.endswith(".csv") and "flight_delays" in filename:
-            file_path = os.path.join(directory, filename)
-            
-            # Extract origin, airline, and year from filename
-            parts = filename.split('_')
-            if len(parts) >= 4:
-                origin = parts[0].upper()
-                airline = parts[1].upper()
-                
-                # Read the CSV file
-                df = pd.read_csv(file_path)
-                
-                # Add origin and airline columns
-                df['origin'] = origin
-                df['airline'] = airline
-                
-                # Standardize date format and create datetime column
-                if 'Date' in df.columns:
-                    df['date'] = pd.to_datetime(df['Date'])
-                
-                all_flights.append(df)
-    
-    if not all_flights:
-        print("No flight data files found!")
-        return pd.DataFrame()
-        
-    # Combine all DataFrames
-    flight_data = pd.concat(all_flights, ignore_index=True)
-    
-    # Clean and standardize column names
-    flight_data.columns = [col.lower().replace(' ', '_') for col in flight_data.columns]
-    
-    # Convert delay columns to numeric
-    for col in flight_data.columns:
-        if 'delay' in col.lower() and flight_data[col].dtype == 'object':
-            flight_data[col] = pd.to_numeric(flight_data[col], errors='coerce')
-    
-    return flight_data
-
-
-def fetch_weather_data(airport_code, year, output_dir=WEATHER_DATA_DIR):
-    """
-    Fetch weather data for a specific airport and year using Meteostat.
-    
-    Parameters:
-        airport_code (str): Airport IATA code
-        year (int): Year to fetch data for
-        output_dir (str): Directory to save weather data
-        
-    Returns:
-        pandas.DataFrame: Weather data for the specified airport and year
-    """
-    os.makedirs(output_dir, exist_ok=True)
-    
-    output_file = os.path.join(output_dir, f"{airport_code.lower()}_weather_{year}.csv")
-    
-    # Check if we already have the data
-    if os.path.exists(output_file):
-        print(f"Loading cached weather data for {airport_code} {year}")
-        return pd.read_csv(output_file, parse_dates=['date'])
-    
-    # Get the meteorological station for this airport
-    station_id = airport_to_station(airport_code)
-    
-    if not station_id:
-        print(f"Could not find a weather station for airport {airport_code}")
-        return pd.DataFrame()
-    
-    # Define the time period
-    start = datetime(year, 1, 1)
-    end = datetime(year, 12, 31)
     
     try:
-        # Fetch daily data from Meteostat
-        data = Daily(station_id, start, end)
-        weather_data = data.fetch()
+        # Find nearby weather stations using Meteostat
+        stations = Stations()
+        stations = stations.nearby(lat, lon)
+        nearest = stations.fetch(1)
         
-        # Reset index to make date a column
-        weather_data = weather_data.reset_index()
+        if nearest.empty:
+            return None
+        
+        return nearest.index[0]  # Return the station ID
+    except Exception as e:
+        print(f"Error finding weather station: {e}")
+        return None
+
+def load_flight_data():
+    """Load all flight CSV files from the flight_data directory"""
+    print("Loading flight data...")
+    all_data = []
+    
+    # Get all CSV files in the directory
+    try:
+        csv_files = [f for f in os.listdir(FLIGHT_DATA_DIR) if f.endswith('.csv')]
+        
+        if not csv_files:
+            print(f"No CSV files found in {FLIGHT_DATA_DIR}")
+            return pd.DataFrame()
+            
+        # Process each CSV file with progress bar
+        for file in tqdm(csv_files, desc="Loading flight data files"):
+            file_path = os.path.join(FLIGHT_DATA_DIR, file)
+            
+            # Load only the columns we need
+            cols_to_use = ['YEAR', 'FL_DATE', 'ORIGIN', 'DEST', 
+                          'CRS_DEP_TIME', 'DEP_TIME', 
+                          'CRS_ARR_TIME', 'ARR_TIME', 'WEATHER_DELAY']
+            
+            df = pd.read_csv(file_path, usecols=lambda c: c in cols_to_use)
+            all_data.append(df)
+            tqdm.write(f"Loaded {len(df)} records from {file}")
+        
+        # Combine all data
+        if not all_data:
+            return pd.DataFrame()
+            
+        combined_df = pd.concat(all_data, ignore_index=True)
+        
+        # Convert date column to datetime
+        combined_df['FL_DATE'] = pd.to_datetime(combined_df['FL_DATE'])
+        
+        # Create departure datetime for merging with hourly weather
+        combined_df['DEP_HOUR'] = combined_df['CRS_DEP_TIME'].apply(
+            lambda x: int(str(int(x)).zfill(4)[:2]) if pd.notna(x) else np.nan
+        )
+        combined_df['DEP_MINUTE'] = combined_df['CRS_DEP_TIME'].apply(
+            lambda x: int(str(int(x)).zfill(4)[2:]) if pd.notna(x) else np.nan
+        )
+        
+        # Create full departure datetime
+        combined_df['DEP_DATETIME'] = combined_df.apply(
+            lambda row: row['FL_DATE'] + timedelta(hours=int(row['DEP_HOUR']), minutes=int(row['DEP_MINUTE']))
+            if pd.notna(row['DEP_HOUR']) and pd.notna(row['DEP_MINUTE']) else pd.NaT,
+            axis=1
+        )
+        
+        # Fill NaN values in WEATHER_DELAY with 0 (assuming no delay)
+        combined_df['WEATHER_DELAY'] = combined_df['WEATHER_DELAY'].fillna(0)
+        
+        print(f"Successfully loaded {len(combined_df)} flight records")
+        return combined_df
+        
+    except Exception as e:
+        print(f"Error loading flight data: {e}")
+        return pd.DataFrame()
+
+def get_hourly_weather(airport_code, year):
+    """Get hourly weather data for an airport in a specific year"""
+    # Check if we already have cached data
+    cache_file = os.path.join(WEATHER_DATA_DIR, f"{airport_code}_weather_{year}.csv")
+    
+    if os.path.exists(cache_file):
+        print(f"Loading cached weather data for {airport_code}")
+        return pd.read_csv(cache_file, parse_dates=['time'])
+    
+    # Get airport coordinates
+    lat, lon = get_airport_coordinates(airport_code)
+    if lat is None or lon is None:
+        print(f"Could not find coordinates for {airport_code}")
+        return pd.DataFrame()
+    
+    # Find nearest weather station
+    station_id = get_nearest_weather_station(lat, lon)
+    if station_id is None:
+        print(f"No weather station found near {airport_code}")
+        return pd.DataFrame()
+    
+    # Define time period
+    start = datetime(year, 1, 1)
+    end = datetime(year, 12, 31, 23, 59)
+    
+    try:
+        # Fetch hourly weather data
+        print(f"Fetching weather data for {airport_code}...")
+        data = Hourly(station_id, start, end)
+        weather_df = data.fetch()
+        
+        # Reset index to make time a column
+        weather_df = weather_df.reset_index()
         
         # Add airport code
-        weather_data['airport'] = airport_code.upper()
+        weather_df['airport'] = airport_code
         
-        # Save to CSV
-        weather_data.to_csv(output_file, index=False)
+        # Save to cache
+        weather_df.to_csv(cache_file, index=False)
         
-        return weather_data
-    
+        return weather_df
     except Exception as e:
         print(f"Error fetching weather data for {airport_code}: {e}")
         return pd.DataFrame()
 
-
-def merge_flight_weather_data(flight_data, weather_data_dict):
-    """
-    Merge flight data with corresponding weather data.
+def merge_flight_and_weather(flight_data):
+    """Merge flight data with weather data from origin and destination airports"""
+    print("Merging flight and weather data...")
     
-    Parameters:
-        flight_data (pandas.DataFrame): Flight data
-        weather_data_dict (dict): Dictionary mapping airport codes to weather DataFrames
-        
-    Returns:
-        pandas.DataFrame: Merged flight and weather data
-    """
-    # Create a list to store merged DataFrames
-    merged_dfs = []
-    
-    # Get unique origin airports
-    origins = flight_data['origin'].unique()
-    
-    for origin in origins:
-        # Get flights for this origin
-        origin_flights = flight_data[flight_data['origin'] == origin].copy()
-        
-        # Check if we have weather data for this airport
-        if origin.lower() in weather_data_dict:
-            origin_weather = weather_data_dict[origin.lower()].copy()
-            
-            # Ensure date columns are datetime for merging
-            if 'date' in origin_flights.columns and 'date' in origin_weather.columns:
-                # Convert dates to date only (no time) for merging
-                origin_flights['merge_date'] = origin_flights['date'].dt.date
-                origin_weather['merge_date'] = pd.to_datetime(origin_weather['date']).dt.date
-                
-                # Merge flight and weather data
-                merged = pd.merge(
-                    origin_flights,
-                    origin_weather,
-                    on='merge_date',
-                    how='left',
-                    suffixes=('', '_weather')
-                )
-                
-                # Drop the temporary merge column
-                merged.drop('merge_date', axis=1, inplace=True)
-                
-                merged_dfs.append(merged)
-            else:
-                print(f"Missing date column for {origin}")
-                merged_dfs.append(origin_flights)
-        else:
-            print(f"No weather data for {origin}")
-            merged_dfs.append(origin_flights)
-    
-    # Combine all merged DataFrames
-    if not merged_dfs:
+    if flight_data.empty:
         return pd.DataFrame()
-        
-    merged_data = pd.concat(merged_dfs, ignore_index=True)
     
-    return merged_data
-
-
-def analyze_weather_impact(merged_data, output_dir=OUTPUT_DIR):
-    """
-    Analyze the impact of weather on flight delays and generate visualizations.
+    # Get unique airports and most common year
+    airports = list(set(flight_data['ORIGIN'].unique()) | set(flight_data['DEST'].unique()))
+    year = int(flight_data['YEAR'].mode()[0]) if 'YEAR' in flight_data.columns else \
+           int(flight_data['FL_DATE'].dt.year.mode()[0])
     
-    Parameters:
-        merged_data (pandas.DataFrame): Merged flight and weather data
-        output_dir (str): Directory to save analysis output
-        
-    Returns:
-        dict: Dictionary containing analysis results
-    """
-    if merged_data.empty:
-        print("No data to analyze!")
-        return {}
+    print(f"Processing {len(airports)} airports for year {year}")
     
-    results = {}
+    # Dictionary to store weather data by airport
+    weather_data = {}
     
-    # 1. Calculate correlation between weather variables and delays
-    weather_cols = ['tavg', 'tmin', 'tmax', 'prcp', 'snow', 'wspd', 'pres']
-    delay_cols = [col for col in merged_data.columns if 'delay' in col.lower()]
+    # Fetch weather data for each airport with progress bar
+    for airport in tqdm(airports, desc="Fetching weather data for airports"):
+        weather_df = get_hourly_weather(airport, year)
+        if not weather_df.empty:
+            weather_data[airport] = weather_df
+            tqdm.write(f"Successfully processed weather data for {airport}")
     
-    weather_delay_cols = weather_cols + delay_cols
-    available_cols = [col for col in weather_delay_cols if col in merged_data.columns]
+    # Create a copy of flight data for merging
+    merged_df = flight_data.copy()
     
-    correlation_df = merged_data[available_cols].corr()
+    # Add columns for origin and destination weather
+    weather_cols = ['temp', 'dwpt', 'rhum', 'prcp', 'snow', 'wdir', 'wspd', 'wpgt', 'pres', 'coco']
     
-    # Save correlation matrix
-    plt.figure(figsize=(12, 10))
-    sns.heatmap(correlation_df, annot=True, cmap='coolwarm', vmin=-1, vmax=1)
-    plt.title('Correlation Between Weather Variables and Flight Delays')
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, 'weather_delay_correlation.png'))
-    plt.close()
+    # Initialize weather columns with NaN
+    for col in weather_cols:
+        merged_df[f'origin_{col}'] = np.nan
+        merged_df[f'dest_{col}'] = np.nan
     
-    # 2. Analyze delay patterns by weather conditions
-    # Precipitation impact
-    if 'prcp' in merged_data.columns and any(col in merged_data.columns for col in delay_cols):
-        delay_col = next(col for col in delay_cols if col in merged_data.columns)
-        
-        # Create categorical precipitation levels
-        merged_data['prcp_level'] = pd.cut(
-            merged_data['prcp'], 
-            bins=[-0.1, 0, 5, 10, 100], 
-            labels=['None', 'Light', 'Moderate', 'Heavy']
-        )
-        
-        # Calculate average delay by precipitation level
-        prcp_impact = merged_data.groupby('prcp_level')[delay_col].mean().reset_index()
-        
-        # Visualize
-        plt.figure(figsize=(10, 6))
-        sns.barplot(x='prcp_level', y=delay_col, data=prcp_impact)
-        plt.title('Average Flight Delay by Precipitation Level')
-        plt.ylabel('Average Delay (minutes)')
-        plt.xlabel('Precipitation Level')
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, 'delay_by_precipitation.png'))
-        plt.close()
-        
-        results['precipitation_impact'] = prcp_impact.to_dict()
+    # Process each flight
+    print("Merging weather data with flights...")
     
-    # 3. Temperature impact
-    if 'tavg' in merged_data.columns and any(col in merged_data.columns for col in delay_cols):
-        delay_col = next(col for col in delay_cols if col in merged_data.columns)
-        
-        # Create temperature categories
-        merged_data['temp_level'] = pd.cut(
-            merged_data['tavg'],
-            bins=[-100, 0, 10, 20, 30, 100],
-            labels=['Freezing', 'Cold', 'Cool', 'Warm', 'Hot']
-        )
-        
-        # Calculate average delay by temperature level
-        temp_impact = merged_data.groupby('temp_level')[delay_col].mean().reset_index()
-        
-        # Visualize
-        plt.figure(figsize=(10, 6))
-        sns.barplot(x='temp_level', y=delay_col, data=temp_impact)
-        plt.title('Average Flight Delay by Temperature')
-        plt.ylabel('Average Delay (minutes)')
-        plt.xlabel('Temperature Level')
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, 'delay_by_temperature.png'))
-        plt.close()
-        
-        results['temperature_impact'] = temp_impact.to_dict()
+    # Group by origin and departure datetime to process more efficiently
+    origins = merged_df['ORIGIN'].unique()
+    for origin in tqdm(origins, desc="Merging data by origin airport"):
+        if origin in weather_data:
+            origin_group = merged_df[merged_df['ORIGIN'] == origin]
+            origin_weather = weather_data[origin]
+            
+            # Convert to datetime and round to hour for merging
+            origin_group['dep_hour'] = origin_group['DEP_DATETIME'].dt.floor('H')
+            
+            # Merge with weather data
+            merged_origin = pd.merge(
+                origin_group,
+                origin_weather,
+                left_on='dep_hour',
+                right_on='time',
+                how='left'
+            )
+            
+            # Update original dataframe with weather data
+            for col in weather_cols:
+                if col in origin_weather.columns:
+                    merged_df.loc[merged_origin.index, f'origin_{col}'] = merged_origin[col].values
+            
+            tqdm.write(f"Merged {len(origin_group)} flights for {origin}")
     
-    # 4. Wind speed impact
-    if 'wspd' in merged_data.columns and any(col in merged_data.columns for col in delay_cols):
-        delay_col = next(col for col in delay_cols if col in merged_data.columns)
-        
-        # Create wind speed categories
-        merged_data['wind_level'] = pd.cut(
-            merged_data['wspd'],
-            bins=[-1, 5, 10, 20, 100],
-            labels=['Light', 'Moderate', 'Strong', 'Severe']
-        )
-        
-        # Calculate average delay by wind level
-        wind_impact = merged_data.groupby('wind_level')[delay_col].mean().reset_index()
-        
-        # Visualize
-        plt.figure(figsize=(10, 6))
-        sns.barplot(x='wind_level', y=delay_col, data=wind_impact)
-        plt.title('Average Flight Delay by Wind Speed')
-        plt.ylabel('Average Delay (minutes)')
-        plt.xlabel('Wind Speed Level')
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, 'delay_by_wind.png'))
-        plt.close()
-        
-        results['wind_impact'] = wind_impact.to_dict()
+    # Clean up temporary columns
+    if 'dep_hour' in merged_df.columns:
+        merged_df.drop('dep_hour', axis=1, inplace=True)
     
-    # 5. Airport comparison
-    if 'origin' in merged_data.columns and any(col in merged_data.columns for col in delay_cols):
-        delay_col = next(col for col in delay_cols if col in merged_data.columns)
-        
-        # Calculate average delay by airport
-        airport_impact = merged_data.groupby('origin')[delay_col].agg(['mean', 'count']).reset_index()
-        
-        # Visualize
-        plt.figure(figsize=(12, 6))
-        sns.barplot(x='origin', y='mean', data=airport_impact)
-        plt.title('Average Flight Delay by Origin Airport')
-        plt.ylabel('Average Delay (minutes)')
-        plt.xlabel('Origin Airport')
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, 'delay_by_airport.png'))
-        plt.close()
-        
-        results['airport_impact'] = airport_impact.to_dict()
+    # Save merged data
+    output_file = os.path.join(OUTPUT_DIR, 'flight_weather_merged.csv')
+    merged_df.to_csv(output_file, index=False)
+    print(f"Saved merged data to {output_file}")
     
-    # 6. Airline comparison
-    if 'airline' in merged_data.columns and any(col in merged_data.columns for col in delay_cols):
-        delay_col = next(col for col in delay_cols if col in merged_data.columns)
-        
-        # Calculate average delay by airline
-        airline_impact = merged_data.groupby('airline')[delay_col].agg(['mean', 'count']).reset_index()
-        
-        # Visualize
-        plt.figure(figsize=(10, 6))
-        sns.barplot(x='airline', y='mean', data=airline_impact)
-        plt.title('Average Flight Delay by Airline')
-        plt.ylabel('Average Delay (minutes)')
-        plt.xlabel('Airline')
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, 'delay_by_airline.png'))
-        plt.close()
-        
-        results['airline_impact'] = airline_impact.to_dict()
-    
-    # Save the merged data
-    merged_data.to_csv(os.path.join(output_dir, 'flight_weather_merged.csv'), index=False)
-    
-    return results
-
-
-def create_summary_report(results, output_dir=OUTPUT_DIR):
-    """
-    Create a summary report of the analysis results.
-    
-    Parameters:
-        results (dict): Analysis results
-        output_dir (str): Directory to save the report
-        
-    Returns:
-        str: Path to the generated report
-    """
-    report_path = os.path.join(output_dir, 'weather_impact_report.md')
-    
-    with open(report_path, 'w') as f:
-        f.write("# Impact of Weather on Flight Delays\n\n")
-        f.write("## Executive Summary\n\n")
-        f.write("This report analyzes how different weather conditions affect flight delays ")
-        f.write("across various airports and airlines.\n\n")
-        
-        # Add sections for each analysis
-        
-        if 'precipitation_impact' in results:
-            f.write("## Impact of Precipitation\n\n")
-            f.write("Precipitation shows a significant impact on flight delays. ")
-            f.write("As precipitation increases from none to heavy, delays tend to increase.\n\n")
-            f.write("![Delay by Precipitation](delay_by_precipitation.png)\n\n")
-        
-        if 'temperature_impact' in results:
-            f.write("## Impact of Temperature\n\n")
-            f.write("Temperature extremes, particularly freezing conditions, ")
-            f.write("are associated with longer flight delays.\n\n")
-            f.write("![Delay by Temperature](delay_by_temperature.png)\n\n")
-        
-        if 'wind_impact' in results:
-            f.write("## Impact of Wind Speed\n\n")
-            f.write("Strong and severe winds correlate with increased flight delays.\n\n")
-            f.write("![Delay by Wind](delay_by_wind.png)\n\n")
-        
-        if 'airport_impact' in results:
-            f.write("## Airport Comparison\n\n")
-            f.write("Different airports experience varying levels of weather-related delays.\n\n")
-            f.write("![Delay by Airport](delay_by_airport.png)\n\n")
-        
-        if 'airline_impact' in results:
-            f.write("## Airline Comparison\n\n")
-            f.write("Airlines show different patterns in weather-related delays, ")
-            f.write("which may reflect different operational strategies.\n\n")
-            f.write("![Delay by Airline](delay_by_airline.png)\n\n")
-        
-        f.write("## Conclusion\n\n")
-        f.write("Weather conditions significantly impact flight delays, with precipitation, ")
-        f.write("temperature extremes, and high winds being major contributors. ")
-        f.write("Different airports and airlines show varying levels of resilience to adverse weather conditions.\n\n")
-        
-        f.write("## Recommendations\n\n")
-        f.write("1. Airlines should consider adjusting schedules during seasons with expected adverse weather.\n")
-        f.write("2. Airports in regions prone to specific weather conditions should invest in appropriate infrastructure.\n")
-        f.write("3. Travelers should plan for potential delays during periods of forecasted adverse weather.\n")
-    
-    print(f"Summary report created at {report_path}")
-    return report_path
-
+    return merged_df
 
 def main():
-    """
-    Main execution function for the flight weather analysis pipeline.
-    """
-    print("Starting Flight Weather Analysis Pipeline")
+    """Run the data pipeline to merge flight and weather data"""
+    print("Starting Flight Weather Data Pipeline")
     
-    # 1. Load flight data
-    print("\nLoading flight data...")
-    flight_data = load_flight_data()
-    if flight_data.empty:
-        print("No flight data available. Exiting.")
-        return
+    # Create a master progress bar for the entire pipeline
+    pipeline_steps = tqdm(total=2, desc="Overall pipeline progress")
     
-    print(f"Loaded {len(flight_data)} flight records")
+    try:
+        # 1. Load flight data
+        flight_data = load_flight_data()
+        if flight_data.empty:
+            print("No flight data available. Exiting.")
+            return
+        pipeline_steps.update(1)
+        
+        # 2. Merge flight data with weather data
+        merged_data = merge_flight_and_weather(flight_data)
+        if merged_data.empty:
+            print("Failed to merge data. Exiting.")
+            return
+        pipeline_steps.update(1)
+        
+        print("\n✅ Data processing complete!")
+        print(f"📊 Merged data saved to: {os.path.join(OUTPUT_DIR, 'flight_weather_merged.csv')}")
+        print(f"📈 Total records processed: {len(merged_data)}")
+        print(f"🌤️ Weather data cached in: {WEATHER_DATA_DIR}")
     
-    # 2. Extract year from flight data
-    if 'date' in flight_data.columns:
-        year = int(flight_data['date'].dt.year.mode()[0])
-    else:
-        # Default to 2020 based on filenames
-        year = 2020
-    
-    print(f"Analyzing data for year {year}")
-    
-    # 3. Get unique airports
-    airports = flight_data['origin'].unique()
-    print(f"Found {len(airports)} unique airports: {', '.join(airports)}")
-    
-    # 4. Fetch weather data for each airport
-    print("\nFetching weather data...")
-    weather_data_dict = {}
-    
-    for airport in airports:
-        print(f"Fetching weather data for {airport}...")
-        weather_data = fetch_weather_data(airport, year)
-        if not weather_data.empty:
-            weather_data_dict[airport.lower()] = weather_data
-    
-    if not weather_data_dict:
-        print("No weather data available. Exiting.")
-        return
-    
-    # 5. Merge flight and weather data
-    print("\nMerging flight and weather data...")
-    merged_data = merge_flight_weather_data(flight_data, weather_data_dict)
-    
-    if merged_data.empty:
-        print("Failed to merge data. Exiting.")
-        return
-    
-    print(f"Successfully merged data: {len(merged_data)} records")
-    
-    # 6. Analyze impact of weather on delays
-    print("\nAnalyzing impact of weather on flight delays...")
-    results = analyze_weather_impact(merged_data)
-    
-    # 7. Create summary report
-    print("\nCreating summary report...")
-    report_path = create_summary_report(results)
-    
-    print("\nAnalysis complete! Results available in the analysis_output directory.")
-    print(f"Summary report: {report_path}")
-
+    except Exception as e:
+        print(f"❌ Error in pipeline: {e}")
+        raise
+    finally:
+        # Close all progress bars
+        pipeline_steps.close()
 
 if __name__ == "__main__":
     main()

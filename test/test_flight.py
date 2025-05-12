@@ -4,6 +4,8 @@ import os
 import re
 import json
 import sys
+
+import pandas as pd
 #%%
 def extract_flight_info(file_path):
     with open(file_path, 'r', encoding='utf-8') as f:
@@ -49,6 +51,5 @@ def extract_flight_info(file_path):
 result = extract_flight_info(r"C:\Users\yeyuc\Documents\CS513\CS513_Final_Proj\flight_data\Detailed_Statistics_Departures (14).csv")
 json_preview = json.dumps(result, indent=2)
 print(json_preview[:1000] ) # Truncate output for preview
-# %%
-print(result['flights'][-1])
+
 # %%
