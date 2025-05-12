@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from ydata_profiling import ProfileReport
 import os
+import io  # Add this import for StringIO
 
 def load_data(filepath):
     """
@@ -22,11 +23,11 @@ def basic_exploration(df):
     """
     print("\n=== BASIC DATA EXPLORATION ===")
     
-    # Display basic info
+    # Display basic info - FIX: Use StringIO instead of a list
     print("\nDataframe Info:")
-    buffer = []
+    buffer = io.StringIO()
     df.info(buf=buffer)
-    print("".join(buffer))
+    print(buffer.getvalue())
     
     # Display basic statistics
     print("\nBasic Statistics:")
@@ -56,9 +57,11 @@ def convert_datetime_fields(df):
         print("Converted FL_DATE to datetime")
     
     # Convert DEP_DATETIME to datetime if it exists and is not already
-    if 'DEP_DATETIME' in df.columns and not pd.api.types.is_datetime64_dtype(df['DEP_DATETIME']):
-        df['DEP_DATETIME'] = pd.to_datetime(df['DEP_DATETIME'])
-        print("Converted DEP_DATETIME to datetime")
+    datetime_cols = ['CRS_DEP_DATETIME', 'CRS_ARR_DATETIME']
+    for col in datetime_cols:
+        if col in df.columns and not pd.api.types.is_datetime64_dtype(df[col]):
+            df[col] = pd.to_datetime(df[col])
+            print(f"Converted {col} to datetime")
         
     return df
 
@@ -133,21 +136,33 @@ def create_visualizations(df, missing_data, output_dir):
     
     # Figure 3: Correlation between origin weather conditions and delay
     weather_cols = [col for col in df.columns if col.startswith('origin_') and df[col].dtype != 'object']
-    weather_cols.append('WEATHER_DELAY')
+    if 'WEATHER_DELAY' in df.columns:
+        weather_cols.append('WEATHER_DELAY')
     
     if len(weather_cols) > 1 and 'WEATHER_DELAY' in df.columns:
         plt.figure(figsize=(12, 10))
-        correlation = df[weather_cols].corr()
-        sns.heatmap(correlation, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
-        plt.title('Correlation between Origin Weather Conditions and Delay')
-        plt.tight_layout()
-        plt.savefig(f"{output_dir}/weather_delay_correlation.png")
-        print(f"Saved weather-delay correlation heatmap to {output_dir}/weather_delay_correlation.png")
+        # Use a sample of the data for faster correlation calculation if the dataset is large
+        sample_size = min(100000, len(df))
+        sample_df = df.sample(sample_size, random_state=42) if len(df) > sample_size else df
+        
+        try:
+            correlation = sample_df[weather_cols].corr()
+            sns.heatmap(correlation, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
+            plt.title('Correlation between Origin Weather Conditions and Delay')
+            plt.tight_layout()
+            plt.savefig(f"{output_dir}/weather_delay_correlation.png")
+            print(f"Saved weather-delay correlation heatmap to {output_dir}/weather_delay_correlation.png")
+        except Exception as e:
+            print(f"Error generating correlation heatmap: {e}")
     
     # Figure 4: Boxplot of weather delay by origin
     if 'ORIGIN' in df.columns and 'WEATHER_DELAY' in df.columns:
         top_origins = df['ORIGIN'].value_counts().head(10).index
         origin_data = df[df['ORIGIN'].isin(top_origins)]
+        
+        # Use a sample for visualization if there's too much data
+        if len(origin_data) > 50000:
+            origin_data = origin_data.sample(50000, random_state=42)
         
         plt.figure(figsize=(14, 8))
         sns.boxplot(x='ORIGIN', y='WEATHER_DELAY', data=origin_data)
@@ -172,9 +187,15 @@ def generate_profile_report(df, output_dir):
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         
-        # Generate the report
-        profile = ProfileReport(df, title="Flight Weather Merged Data Profiling Report", 
-                                explorative=True)
+        # For large datasets, use minimal configuration and sample
+        sample_size = min(100000, len(df))
+        sample_df = df.sample(sample_size, random_state=42) if len(df) > sample_size else df
+        
+        # Generate the report with minimal configuration for large datasets
+        profile = ProfileReport(sample_df, 
+                               title="Flight Weather Merged Data Profiling Report",
+                               minimal=True,  # Use minimal mode for large datasets
+                               progress_bar=True)
         
         # Save the report
         profile.to_file(f"{output_dir}/profile_report.html")
@@ -210,13 +231,17 @@ def analyze_weather_impact(df):
     # Create a table of correlations
     correlations = []
     
+    # For large datasets, use a sample for faster correlation calculation
+    sample_size = min(100000, len(df))
+    sample_df = df.sample(sample_size, random_state=42) if len(df) > sample_size else df
+    
     for name, col in weather_metrics:
-        if col in df.columns and df[col].dtype != 'object':
+        if col in df.columns and pd.api.types.is_numeric_dtype(df[col]):
             try:
-                corr = df[['WEATHER_DELAY', col]].corr().iloc[0, 1]
+                corr = sample_df[['WEATHER_DELAY', col]].corr().iloc[0, 1]
                 correlations.append((name, col, corr))
-            except:
-                print(f"Could not calculate correlation for {name}")
+            except Exception as e:
+                print(f"Could not calculate correlation for {name}: {e}")
     
     if correlations:
         correlations_df = pd.DataFrame(correlations, columns=['Weather Metric', 'Column', 'Correlation with Weather Delay'])
@@ -267,8 +292,8 @@ def generate_summary_report(df, output_dir, weather_impact=None):
                 if not pd.api.types.is_datetime64_dtype(df['FL_DATE']):
                     df['FL_DATE'] = pd.to_datetime(df['FL_DATE'])
                 file.write(f"Date range: {df['FL_DATE'].min()} to {df['FL_DATE'].max()}\n")
-            except:
-                pass
+            except Exception as e:
+                file.write(f"Could not determine date range: {e}\n")
         
         if 'ORIGIN' in df.columns:
             top_origins = df['ORIGIN'].value_counts().head(5)
@@ -356,6 +381,8 @@ def main():
     
     except Exception as e:
         print(f"Error during data profiling: {e}")
+        import traceback
+        traceback.print_exc()  # Print full traceback for better debugging
 
 if __name__ == "__main__":
     main()

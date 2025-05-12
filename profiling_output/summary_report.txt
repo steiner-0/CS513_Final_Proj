@@ -1,0 +1,50 @@
+=== FLIGHT-WEATHER DATA PROFILING SUMMARY REPORT ===
+
+Generated on: 2025-05-12 00:51:55
+Dataset: Flight-Weather Merged Data
+Records: 5022397
+Variables: 32
+
+== DATASET SUMMARY ==
+Date range: 2020-01-01 00:00:00 to 2020-12-31 00:00:00
+
+Top 5 Origin Airports:
+  - ATL: 255350 flights (5.1%)
+  - ORD: 226384 flights (4.5%)
+  - DFW: 225797 flights (4.5%)
+  - DEN: 205552 flights (4.1%)
+  - CLT: 186070 flights (3.7%)
+
+== MISSING DATA SUMMARY ==
+Columns with missing values: 16
+  - DEP_TIME: 299620 missing values (6.0%)
+  - ARR_TIME: 301999 missing values (6.0%)
+  - origin_temp: 4767072 missing values (94.9%)
+  - dest_temp: 4767420 missing values (94.9%)
+  - origin_dwpt: 4767167 missing values (94.9%)
+  - dest_dwpt: 4767543 missing values (94.9%)
+  - origin_rhum: 4767167 missing values (94.9%)
+  - dest_rhum: 4767543 missing values (94.9%)
+  - origin_wdir: 4767492 missing values (94.9%)
+  - dest_wdir: 4781784 missing values (95.2%)
+  - origin_wspd: 4767298 missing values (94.9%)
+  - dest_wspd: 4779904 missing values (95.2%)
+  - origin_wpgt: 4767298 missing values (94.9%)
+  - dest_wpgt: 4779904 missing values (95.2%)
+  - origin_pres: 4769009 missing values (95.0%)
+  - dest_pres: 4787105 missing values (95.3%)
+
+== WEATHER DELAY SUMMARY ==
+Average weather delay: 0.41 minutes
+Maximum weather delay: 1706.00 minutes
+Flights with weather delays: 30532 (0.6%)
+
+== WEATHER-DELAY CORRELATION SUMMARY ==
+  - Pressure: 0.007
+  - Relative Humidity: 0.006
+  - Precipitation: 0.002
+  - Weather Condition Code: 0.000
+  - Dew Point: -0.000
+
+== CONCLUSION ==
+This report provides a summary of the flight-weather merged dataset. For more detailed analysis, refer to the visualizations in the profiling_output directory.
